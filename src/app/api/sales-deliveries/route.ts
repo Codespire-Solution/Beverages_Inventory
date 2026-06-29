@@ -18,39 +18,38 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const deliveries = await prisma.salesDelivery.findMany({
-      include: {
-        order: {
-          include: {
-            customer: true,
-          },
-        },
-        warehouse: true,
-        items: {
-          include: {
-            sku: true,
-            batch: {
-              include: {
-                item: true,
-              },
-            },
-            unit: true,
-          },
-        },
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: {
-        deliveryDate: 'desc',
-      },
-    })
+    const { searchParams } = new URL(request.url)
+    const limitParam = searchParams.get('limit')
+    const pageParam = searchParams.get('page')
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 500) : undefined
+    const page = pageParam ? Math.max(parseInt(pageParam, 10) || 1, 1) : 1
+    const skip = limit ? (page - 1) * limit : undefined
 
-    return NextResponse.json({ deliveries })
+    const [deliveries, total] = await Promise.all([
+      prisma.salesDelivery.findMany({
+        include: {
+          order: { include: { customer: true } },
+          warehouse: true,
+          items: {
+            include: {
+              sku: true,
+              batch: { include: { item: true } },
+              unit: true,
+            },
+          },
+          creator: { select: { id: true, fullName: true, email: true } },
+        },
+        orderBy: { deliveryDate: 'desc' },
+        ...(limit ? { take: limit, skip } : {}),
+      }),
+      limit ? prisma.salesDelivery.count() : Promise.resolve(undefined),
+    ])
+
+    return NextResponse.json(
+      limit
+        ? { deliveries, pagination: { page, limit, total, totalPages: Math.ceil((total ?? 0) / limit) } }
+        : { deliveries }
+    )
   } catch (error) {
     console.error('Sales deliveries GET error:', error)
     return NextResponse.json(

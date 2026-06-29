@@ -63,63 +63,46 @@ export async function GET(
       return NextResponse.json({ error: 'Recipe not found for this production batch' }, { status: 404 })
     }
 
-    // Calculate required quantities and preview FIFO batches
-    const materialPreview = await Promise.all(
-      productionBatch.recipeVersion.ingredients.map(async (ingredient) => {
-        // Calculate required quantity based on target production quantity
-        const requiredQuantity = ingredient.quantity * productionBatch.targetQuantity
-
-        // Get available stock in the warehouse
-        const stockResult = await prisma.inventoryBatch.aggregate({
-          where: {
-            itemId: ingredient.itemId,
-            warehouseId: warehouseIdNum,
-            quantity: {
-              gt: 0,
-            },
-          },
-          _sum: {
-            quantity: true,
-          },
+    // Pre-fetch all stock totals in ONE groupBy instead of N aggregates.
+    const ingredients = productionBatch.recipeVersion.ingredients
+    const itemIds = ingredients.map(i => i.itemId)
+    const stockTotals = itemIds.length
+      ? await prisma.inventoryBatch.groupBy({
+          by: ['itemId'],
+          where: { itemId: { in: itemIds }, warehouseId: warehouseIdNum, quantity: { gt: 0 } },
+          _sum: { quantity: true },
         })
+      : []
+    const stockByItemId = new Map(stockTotals.map(s => [s.itemId, s._sum.quantity || 0]))
 
-        const availableStock = stockResult._sum.quantity || 0
+    // FIFO picks must be sequential per item; run them in parallel across items.
+    const materialPreview = await Promise.all(
+      ingredients.map(async (ingredient) => {
+        const requiredQuantity = ingredient.quantity * productionBatch.targetQuantity
+        const availableStock = stockByItemId.get(ingredient.itemId) ?? 0
         const isSufficient = availableStock >= requiredQuantity
 
-        // Preview FIFO batches (this will throw if insufficient, so catch it)
         let fifoBatches: any[] = []
         let fifoError: string | null = null
         try {
-          fifoBatches = await getFIFOBatches(
-            ingredient.itemId,
-            warehouseIdNum,
-            requiredQuantity
-          )
-
-          // Get batch details
-          const batchIds = fifoBatches.map((b) => b.batchId)
-          const batches = await prisma.inventoryBatch.findMany({
-            where: {
-              id: { in: batchIds },
-            },
-            include: {
-              unit: true,
-            },
-          })
-
-          fifoBatches = fifoBatches.map((fb) => {
-            const batch = batches.find((b) => b.id === fb.batchId)
+          const picked = await getFIFOBatches(ingredient.itemId, warehouseIdNum, requiredQuantity)
+          const batchIds = picked.map(b => b.batchId)
+          const batches = batchIds.length
+            ? await prisma.inventoryBatch.findMany({
+                where: { id: { in: batchIds } },
+                include: { unit: true },
+              })
+            : []
+          const batchById = new Map(batches.map(b => [b.id, b]))
+          fifoBatches = picked.map(fb => {
+            const batch = batchById.get(fb.batchId)
             return {
               ...fb,
-              batch: batch
-                ? {
-                    id: batch.id,
-                    batchNumber: batch.batchNumber,
-                    receivedDate: batch.receivedDate,
-                    expiryDate: batch.expiryDate,
-                    unit: batch.unit,
-                  }
-                : null,
+              batch: batch ? {
+                id: batch.id, batchNumber: batch.batchNumber,
+                receivedDate: batch.receivedDate, expiryDate: batch.expiryDate,
+                unit: batch.unit,
+              } : null,
             }
           })
         } catch (error: any) {
@@ -129,16 +112,10 @@ export async function GET(
         return {
           ingredientId: ingredient.id,
           item: {
-            id: ingredient.item.id,
-            code: ingredient.item.code,
-            name: ingredient.item.name,
-            hasExpiry: ingredient.item.hasExpiry,
+            id: ingredient.item.id, code: ingredient.item.code,
+            name: ingredient.item.name, hasExpiry: ingredient.item.hasExpiry,
           },
-          unit: {
-            id: ingredient.unit.id,
-            code: ingredient.unit.code,
-            name: ingredient.unit.name,
-          },
+          unit: { id: ingredient.unit.id, code: ingredient.unit.code, name: ingredient.unit.name },
           recipeQuantity: ingredient.quantity,
           requiredQuantity,
           availableStock,

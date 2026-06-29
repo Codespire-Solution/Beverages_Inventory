@@ -21,115 +21,95 @@ export async function GET(request: NextRequest) {
     const lowStock = searchParams.get('lowStock') === 'true'
     const search = searchParams.get('search')
 
-    // Get all finished goods items
-    const finishedGoodsItems = await prisma.item.findMany({
-      where: {
-        category: 'finished_good',
-        isActive: true,
-      },
-      include: {
-        baseUnit: true,
-        preferredUnit: true,
-      },
-    })
+    // Was N items × (1 SKU lookup + 1 batch query) = 2N round-trips.
+    // Now: 3 queries total, regardless of N.
+    const batchWhere: any = {
+      quantity: { gt: 0 },
+      item: { category: 'finished_good', isActive: true },
+    }
+    if (warehouseId) batchWhere.warehouseId = parseInt(warehouseId)
 
-    // Get stock for each finished goods item (which corresponds to SKUs)
-    const finishedGoodsStock = await Promise.all(
-      finishedGoodsItems.map(async (item) => {
-        // Find matching SKU by code
-        const sku = await prisma.sku.findUnique({
-          where: { code: item.code },
-        })
+    const [finishedGoodsItems, batches, allSkus] = await Promise.all([
+      prisma.item.findMany({
+        where: { category: 'finished_good', isActive: true },
+        include: { baseUnit: true, preferredUnit: true },
+      }),
+      prisma.inventoryBatch.findMany({
+        where: batchWhere,
+        select: {
+          itemId: true,
+          warehouseId: true,
+          quantity: true,
+          unit: { select: { baseUnitId: true, conversionFactor: true } },
+          warehouse: true,
+        },
+      }),
+      prisma.sku.findMany({
+        select: { id: true, code: true, name: true },
+      }),
+    ])
 
-        if (!sku) return null
+    const skuByCode = new Map(allSkus.map(s => [s.code, s]))
+    const batchesByItem = new Map<number, typeof batches>()
+    for (const b of batches) {
+      const list = batchesByItem.get(b.itemId)
+      if (list) list.push(b)
+      else batchesByItem.set(b.itemId, [b])
+    }
 
-        // Get all batches for this item
-        const whereClause: any = {
-          itemId: item.id,
-          quantity: { gt: 0 },
+    const finishedGoodsStock = finishedGoodsItems.map((item) => {
+      const sku = skuByCode.get(item.code)
+      if (!sku) return null
+
+      const itemBatches = batchesByItem.get(item.id) ?? []
+      let totalStockInBaseUnit = 0
+      const stockByWarehouse: any[] = []
+
+      for (const batch of itemBatches) {
+        const factor = batch.unit.baseUnitId ? batch.unit.conversionFactor : 1
+        const batchQuantityInBase = batch.quantity * factor
+        totalStockInBaseUnit += batchQuantityInBase
+
+        const existing = stockByWarehouse.find(w => w.warehouseId === batch.warehouseId)
+        if (existing) {
+          existing.totalQuantity += batchQuantityInBase
+        } else {
+          stockByWarehouse.push({
+            warehouseId: batch.warehouseId,
+            warehouse: batch.warehouse,
+            totalQuantity: batchQuantityInBase,
+          })
         }
-        if (warehouseId) whereClause.warehouseId = parseInt(warehouseId)
+      }
 
-        const batches = await prisma.inventoryBatch.findMany({
-          where: whereClause,
-          include: {
-            warehouse: true,
-            unit: true,
-          },
-        })
-
-        // Convert all batches to base unit and sum
-        let totalStockInBaseUnit = 0
-        const stockByWarehouse: any[] = []
-
-        for (const batch of batches) {
-          const batchUnit = batch.unit
-          let batchQuantityInBase = batch.quantity
-          
-          if (batchUnit.baseUnitId) {
-            batchQuantityInBase = batch.quantity * batchUnit.conversionFactor
-          }
-
-          totalStockInBaseUnit += batchQuantityInBase
-
-          // Group by warehouse
-          const existingWarehouse = stockByWarehouse.find(
-            (w) => w.warehouseId === batch.warehouseId
-          )
-          if (existingWarehouse) {
-            existingWarehouse.totalQuantity += batchQuantityInBase
-          } else {
-            stockByWarehouse.push({
-              warehouseId: batch.warehouseId,
-              warehouse: batch.warehouse,
-              totalQuantity: batchQuantityInBase,
-            })
-          }
+      let totalStock = totalStockInBaseUnit
+      let displayUnit = item.baseUnit
+      if (item.preferredUnitId && item.preferredUnit) {
+        if (item.preferredUnit.baseUnitId) {
+          totalStock = totalStockInBaseUnit / item.preferredUnit.conversionFactor
         }
+        displayUnit = item.preferredUnit
+      }
 
-        // Convert to preferred unit
-        let totalStock = totalStockInBaseUnit
-        let displayUnit = item.baseUnit
-
-        if (item.preferredUnitId && item.preferredUnit) {
-          const preferredUnit = item.preferredUnit
-          if (preferredUnit.baseUnitId) {
-            totalStock = totalStockInBaseUnit / preferredUnit.conversionFactor
-          }
-          displayUnit = preferredUnit
-        }
-
-        // Convert warehouse stocks to preferred unit
-        stockByWarehouse.forEach((w) => {
-          if (item.preferredUnitId && item.preferredUnit) {
-            const preferredUnit = item.preferredUnit
-            if (preferredUnit.baseUnitId) {
-              w.totalQuantity = w.totalQuantity / preferredUnit.conversionFactor
-            }
-          }
-        })
-
-        return {
-          skuId: sku.id,
-          skuCode: sku.code,
-          skuName: sku.name,
-          itemId: item.id,
-          totalStock,
-          displayUnit: {
-            id: displayUnit.id,
-            code: displayUnit.code,
-            name: displayUnit.name,
-          },
-          stockByWarehouse,
-          minStockQuantity: item.minStockQuantity,
-          isLowStock: item.minStockQuantity
-            ? totalStock < item.minStockQuantity
-            : false,
+      stockByWarehouse.forEach(w => {
+        if (item.preferredUnitId && item.preferredUnit?.baseUnitId) {
+          w.totalQuantity = w.totalQuantity / item.preferredUnit.conversionFactor
         }
       })
-    )
 
-    // Filter out nulls and apply filters
+      return {
+        skuId: sku.id,
+        skuCode: sku.code,
+        skuName: sku.name,
+        itemId: item.id,
+        totalStock,
+        displayUnit: { id: displayUnit.id, code: displayUnit.code, name: displayUnit.name },
+        stockByWarehouse,
+        minStockQuantity: item.minStockQuantity,
+        isLowStock: item.minStockQuantity ? totalStock < item.minStockQuantity : false,
+      }
+    })
+
     let filtered = finishedGoodsStock.filter((stock) => stock !== null)
 
     if (skuId) {

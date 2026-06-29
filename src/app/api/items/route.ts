@@ -34,66 +34,53 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    const items = await prisma.item.findMany({
-      where,
-      include: {
-        baseUnit: true,
-        preferredUnit: true,
-      },
-      orderBy: {
-        code: 'asc',
-      },
+    // Fan out items + their batches in parallel — was 1 + N sequential queries.
+    const [items, batches] = await Promise.all([
+      prisma.item.findMany({
+        where,
+        include: { baseUnit: true, preferredUnit: true },
+        orderBy: { code: 'asc' },
+      }),
+      prisma.inventoryBatch.findMany({
+        where: {
+          quantity: { gt: 0 },
+          item: where, // mirror the same item filter so we never load batches we won't use
+        },
+        select: {
+          itemId: true,
+          quantity: true,
+          unit: { select: { baseUnitId: true, conversionFactor: true } },
+        },
+      }),
+    ])
+
+    // Bucket batches by itemId once, then walk items.
+    const batchesByItem = new Map<number, typeof batches>()
+    for (const b of batches) {
+      const list = batchesByItem.get(b.itemId)
+      if (list) list.push(b)
+      else batchesByItem.set(b.itemId, [b])
+    }
+
+    const itemsWithStock = items.map((item) => {
+      const itemBatches = batchesByItem.get(item.id) ?? []
+      let totalStockInBaseUnit = 0
+      for (const batch of itemBatches) {
+        const f = batch.unit.baseUnitId ? batch.unit.conversionFactor : 1
+        totalStockInBaseUnit += batch.quantity * f
+      }
+
+      let totalStock = totalStockInBaseUnit
+      let displayUnit = item.baseUnit
+      if (item.preferredUnitId && item.preferredUnit) {
+        if (item.preferredUnit.baseUnitId) {
+          totalStock = totalStockInBaseUnit / item.preferredUnit.conversionFactor
+        }
+        displayUnit = item.preferredUnit
+      }
+
+      return { ...item, totalStock, displayUnit }
     })
-
-    // Calculate total stock for each item across all warehouses
-    const itemsWithStock = await Promise.all(
-      items.map(async (item) => {
-        // Get all batches for this item with their units
-        const batches = await prisma.inventoryBatch.findMany({
-          where: {
-            itemId: item.id,
-            quantity: {
-              gt: 0, // Only count batches with available stock
-            },
-          },
-          include: {
-            unit: true,
-          },
-        })
-
-        // Convert all batches to base unit and sum
-        let totalStockInBaseUnit = 0
-        for (const batch of batches) {
-          const batchUnit = batch.unit
-          if (batchUnit.baseUnitId) {
-            // Convert to base unit: quantity * conversionFactor
-            totalStockInBaseUnit += batch.quantity * batchUnit.conversionFactor
-          } else {
-            // Already in base unit
-            totalStockInBaseUnit += batch.quantity
-          }
-        }
-
-        // Convert from base unit to preferred unit (or keep in base unit if no preferred unit)
-        let totalStock = totalStockInBaseUnit
-        let displayUnit = item.baseUnit
-        
-        if (item.preferredUnitId && item.preferredUnit) {
-          const preferredUnit = item.preferredUnit
-          if (preferredUnit.baseUnitId) {
-            // Convert from base to preferred: baseQuantity / conversionFactor
-            totalStock = totalStockInBaseUnit / preferredUnit.conversionFactor
-          }
-          displayUnit = preferredUnit
-        }
-
-        return {
-          ...item,
-          totalStock,
-          displayUnit, // Include the unit to display
-        }
-      })
-    )
 
     return NextResponse.json({ items: itemsWithStock })
   } catch (error) {

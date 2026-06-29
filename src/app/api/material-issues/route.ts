@@ -19,35 +19,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const issues = await prisma.materialIssue.findMany({
-      include: {
-        productionBatch: {
-          include: {
-            sku: true,
-          },
-        },
-        warehouse: true,
-        items: {
-          include: {
-            item: true,
-            batch: true,
-            unit: true,
-          },
-        },
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: {
-        issueDate: 'desc',
-      },
-    })
+    const { searchParams } = new URL(request.url)
+    const limitParam = searchParams.get('limit')
+    const pageParam = searchParams.get('page')
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 500) : undefined
+    const page = pageParam ? Math.max(parseInt(pageParam, 10) || 1, 1) : 1
+    const skip = limit ? (page - 1) * limit : undefined
 
-    return NextResponse.json({ issues })
+    const [issues, total] = await Promise.all([
+      prisma.materialIssue.findMany({
+        include: {
+          productionBatch: { include: { sku: true } },
+          warehouse: true,
+          items: { include: { item: true, batch: true, unit: true } },
+          creator: { select: { id: true, fullName: true, email: true } },
+        },
+        orderBy: { issueDate: 'desc' },
+        ...(limit ? { take: limit, skip } : {}),
+      }),
+      limit ? prisma.materialIssue.count() : Promise.resolve(undefined),
+    ])
+
+    return NextResponse.json(
+      limit
+        ? { issues, pagination: { page, limit, total, totalPages: Math.ceil((total ?? 0) / limit) } }
+        : { issues }
+    )
   } catch (error) {
     console.error('Material issues GET error:', error)
     return NextResponse.json(

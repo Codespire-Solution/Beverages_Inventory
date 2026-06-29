@@ -55,49 +55,33 @@ export async function GET(
     const warehouseIdNum = parseInt(warehouseId)
     const targetQuantityNum = parseFloat(targetQuantity)
 
-    // Check availability for each ingredient
-    const materialAvailability = await Promise.all(
-      recipe.ingredients.map(async (ingredient) => {
-        // Calculate required quantity based on target production quantity
-        const requiredQuantity = ingredient.quantity * targetQuantityNum
-
-        // Get available stock in the warehouse
-        const stockResult = await prisma.inventoryBatch.aggregate({
-          where: {
-            itemId: ingredient.itemId,
-            warehouseId: warehouseIdNum,
-            quantity: {
-              gt: 0,
-            },
-          },
-          _sum: {
-            quantity: true,
-          },
+    // Was N aggregate queries. Now: 1 groupBy, regardless of ingredient count.
+    const itemIds = recipe.ingredients.map(i => i.itemId)
+    const stockTotals = itemIds.length
+      ? await prisma.inventoryBatch.groupBy({
+          by: ['itemId'],
+          where: { itemId: { in: itemIds }, warehouseId: warehouseIdNum, quantity: { gt: 0 } },
+          _sum: { quantity: true },
         })
+      : []
+    const stockByItemId = new Map(stockTotals.map(s => [s.itemId, s._sum.quantity || 0]))
 
-        const availableStock = stockResult._sum.quantity || 0
-        const isSufficient = availableStock >= requiredQuantity
-        const shortfall = Math.max(0, requiredQuantity - availableStock)
+    const materialAvailability = recipe.ingredients.map((ingredient) => {
+      const requiredQuantity = ingredient.quantity * targetQuantityNum
+      const availableStock = stockByItemId.get(ingredient.itemId) ?? 0
+      const isSufficient = availableStock >= requiredQuantity
+      const shortfall = Math.max(0, requiredQuantity - availableStock)
 
-        return {
-          ingredientId: ingredient.id,
-          item: {
-            id: ingredient.item.id,
-            code: ingredient.item.code,
-            name: ingredient.item.name,
-          },
-          unit: {
-            id: ingredient.unit.id,
-            code: ingredient.unit.code,
-            name: ingredient.unit.name,
-          },
-          requiredQuantity,
-          availableStock,
-          isSufficient,
-          shortfall,
-        }
-      })
-    )
+      return {
+        ingredientId: ingredient.id,
+        item: { id: ingredient.item.id, code: ingredient.item.code, name: ingredient.item.name },
+        unit: { id: ingredient.unit.id, code: ingredient.unit.code, name: ingredient.unit.name },
+        requiredQuantity,
+        availableStock,
+        isSufficient,
+        shortfall,
+      }
+    })
 
     const allSufficient = materialAvailability.every((m) => m.isSufficient)
 

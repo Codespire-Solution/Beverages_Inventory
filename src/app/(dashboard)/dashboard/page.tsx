@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQuery } from '@tanstack/react-query'
 import { apiClient } from '@/lib/api-client'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import LoadingSpinner from '@/components/common/LoadingSpinner'
@@ -86,32 +87,24 @@ function getActivityTypeTag(type: string): string {
 export default function DashboardPage() {
   const router = useRouter()
   const toast = useToast()
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
 
-  const fetchStats = async () => {
-    setLoading(true)
-    try {
-      const queryParams = new URLSearchParams()
-      if (startDate) queryParams.append('startDate', startDate)
-      if (endDate) queryParams.append('endDate', endDate)
+  const { data: stats, isLoading: loading, refetch, isFetching } = useQuery<DashboardStats>({
+    queryKey: ['dashboard-stats', startDate, endDate],
+    queryFn: () => {
+      const qp = new URLSearchParams()
+      if (startDate) qp.append('startDate', startDate)
+      if (endDate) qp.append('endDate', endDate)
+      const qs = qp.toString()
+      return apiClient.get<DashboardStats>(`/api/dashboard/stats${qs ? `?${qs}` : ''}`)
+    },
+    staleTime: 60_000,
+  })
 
-      const queryString = queryParams.toString()
-      const data = await apiClient.get<DashboardStats>(`/api/dashboard/stats${queryString ? `?${queryString}` : ''}`)
-      setStats(data)
-    } catch (error: any) {
-      console.error('Failed to fetch stats:', error)
-      toast.error('Failed to load dashboard data')
-    } finally {
-      setLoading(false)
-    }
+  const fetchStats = () => {
+    refetch().catch(() => toast.error('Failed to load dashboard data'))
   }
-
-  useEffect(() => {
-    fetchStats()
-  }, [startDate, endDate])
 
   if (loading && !stats) {
     return <LoadingSpinner text="Loading dashboard..." />
@@ -167,7 +160,7 @@ export default function DashboardPage() {
         <Button
           variant="ghost"
           onClick={fetchStats}
-          disabled={loading}
+          disabled={isFetching}
           className="ml-auto"
           aria-label="Refresh dashboard"
         >

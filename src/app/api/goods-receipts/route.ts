@@ -17,30 +17,32 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 })
     }
 
-    const receipts = await prisma.goodsReceipt.findMany({
-      include: {
-        po: true,
-        warehouse: true,
-        items: {
-          include: {
-            item: true,
-            unit: true,
-          },
-        },
-        creator: {
-          select: {
-            id: true,
-            fullName: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: {
-        receiptDate: 'desc',
-      },
-    })
+    const { searchParams } = new URL(request.url)
+    const limitParam = searchParams.get('limit')
+    const pageParam = searchParams.get('page')
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 500) : undefined
+    const page = pageParam ? Math.max(parseInt(pageParam, 10) || 1, 1) : 1
+    const skip = limit ? (page - 1) * limit : undefined
 
-    return NextResponse.json({ receipts })
+    const [receipts, total] = await Promise.all([
+      prisma.goodsReceipt.findMany({
+        include: {
+          po: true,
+          warehouse: true,
+          items: { include: { item: true, unit: true } },
+          creator: { select: { id: true, fullName: true, email: true } },
+        },
+        orderBy: { receiptDate: 'desc' },
+        ...(limit ? { take: limit, skip } : {}),
+      }),
+      limit ? prisma.goodsReceipt.count() : Promise.resolve(undefined),
+    ])
+
+    return NextResponse.json(
+      limit
+        ? { receipts, pagination: { page, limit, total, totalPages: Math.ceil((total ?? 0) / limit) } }
+        : { receipts }
+    )
   } catch (error) {
     console.error('Goods receipts GET error:', error)
     return NextResponse.json(

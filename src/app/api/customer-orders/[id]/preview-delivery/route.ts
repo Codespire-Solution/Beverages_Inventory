@@ -74,117 +74,89 @@ export async function GET(
         }))
     }
 
-    // Preview FIFO batches for each SKU
-    const deliveryPreview = await Promise.all(
-      deliveryItems.map(async (deliveryItem) => {
-        // Get SKU to find finished goods item
-        const sku = await prisma.sku.findUnique({
-          where: { id: deliveryItem.skuId },
+    // Was N×4 sequential queries per SKU. Now: 3 round-trips total + FIFO in parallel.
+    const skuIds = deliveryItems.map(d => d.skuId)
+    const skus = await prisma.sku.findMany({ where: { id: { in: skuIds } } })
+    const skuById = new Map(skus.map(s => [s.id, s]))
+    const itemCodes = skus.map(s => s.code)
+    const fgItems = itemCodes.length
+      ? await prisma.item.findMany({
+          where: { category: 'finished_good', code: { in: itemCodes } },
+          select: { id: true, code: true },
         })
+      : []
+    const fgItemByCode = new Map(fgItems.map(i => [i.code, i]))
 
-        if (!sku) {
-          return {
-            skuId: deliveryItem.skuId,
-            error: 'SKU not found',
-          }
-        }
-
-        // Find finished goods item
-        const finishedGoodsItem = await prisma.item.findFirst({
-          where: {
-            code: sku.code,
-            category: 'finished_good',
-          },
+    // Pre-fetch stock totals per (itemId, warehouseId) in one query
+    const fgItemIds = fgItems.map(i => i.id)
+    const stockTotals = fgItemIds.length
+      ? await prisma.inventoryBatch.groupBy({
+          by: ['itemId'],
+          where: { itemId: { in: fgItemIds }, warehouseId: warehouseIdNum, quantity: { gt: 0 } },
+          _sum: { quantity: true },
         })
+      : []
+    const stockByItemId = new Map(stockTotals.map(s => [s.itemId, s._sum.quantity || 0]))
 
-        if (!finishedGoodsItem) {
-          return {
-            skuId: deliveryItem.skuId,
-            sku: {
-              id: sku.id,
-              code: sku.code,
-              name: sku.name,
-            },
-            requiredQuantity: deliveryItem.quantity,
-            availableStock: 0,
-            isSufficient: false,
-            error: 'No finished goods inventory found for this SKU',
-          }
-        }
+    // Run FIFO previews in parallel (FIFO needs ordered batch picks so can't trivially batch)
+    const previewResults = await Promise.all(deliveryItems.map(async (deliveryItem) => {
+      const sku = skuById.get(deliveryItem.skuId)
+      if (!sku) return { skuId: deliveryItem.skuId, error: 'SKU not found' as const }
 
-        // Get available stock
-        const stockResult = await prisma.inventoryBatch.aggregate({
-          where: {
-            itemId: finishedGoodsItem.id,
-            warehouseId: warehouseIdNum,
-            quantity: {
-              gt: 0,
-            },
-          },
-          _sum: {
-            quantity: true,
-          },
-        })
-
-        const availableStock = stockResult._sum.quantity || 0
-        const isSufficient = availableStock >= deliveryItem.quantity
-
-        // Preview FIFO batches
-        let fifoBatches: any[] = []
-        let fifoError: string | null = null
-        try {
-          fifoBatches = await getFIFOBatches(
-            finishedGoodsItem.id,
-            warehouseIdNum,
-            deliveryItem.quantity
-          )
-
-          // Get batch details
-          const batchIds = fifoBatches.map((b) => b.batchId)
-          const batches = await prisma.inventoryBatch.findMany({
-            where: {
-              id: { in: batchIds },
-            },
-            include: {
-              unit: true,
-            },
-          })
-
-          fifoBatches = fifoBatches.map((fb) => {
-            const batch = batches.find((b) => b.id === fb.batchId)
-            return {
-              ...fb,
-              batch: batch
-                ? {
-                    id: batch.id,
-                    batchNumber: batch.batchNumber,
-                    receivedDate: batch.receivedDate,
-                    expiryDate: batch.expiryDate,
-                    unit: batch.unit,
-                  }
-                : null,
-            }
-          })
-        } catch (error: any) {
-          fifoError = error.message
-        }
-
+      const finishedGoodsItem = fgItemByCode.get(sku.code)
+      if (!finishedGoodsItem) {
         return {
           skuId: deliveryItem.skuId,
-          sku: {
-            id: sku.id,
-            code: sku.code,
-            name: sku.name,
-            hasExpiry: sku.hasExpiry,
-          },
+          sku: { id: sku.id, code: sku.code, name: sku.name },
           requiredQuantity: deliveryItem.quantity,
-          availableStock,
-          isSufficient,
-          fifoBatches,
-          fifoError,
+          availableStock: 0,
+          isSufficient: false,
+          error: 'No finished goods inventory found for this SKU' as const,
         }
-      })
-    )
+      }
+
+      const availableStock = stockByItemId.get(finishedGoodsItem.id) ?? 0
+      const isSufficient = availableStock >= deliveryItem.quantity
+
+      let fifoBatches: any[] = []
+      let fifoError: string | null = null
+      try {
+        const picked = await getFIFOBatches(finishedGoodsItem.id, warehouseIdNum, deliveryItem.quantity)
+        const batchIds = picked.map(b => b.batchId)
+        const batches = batchIds.length
+          ? await prisma.inventoryBatch.findMany({
+              where: { id: { in: batchIds } },
+              include: { unit: true },
+            })
+          : []
+        const batchById = new Map(batches.map(b => [b.id, b]))
+        fifoBatches = picked.map(fb => {
+          const batch = batchById.get(fb.batchId)
+          return {
+            ...fb,
+            batch: batch ? {
+              id: batch.id, batchNumber: batch.batchNumber,
+              receivedDate: batch.receivedDate, expiryDate: batch.expiryDate,
+              unit: batch.unit,
+            } : null,
+          }
+        })
+      } catch (error: any) {
+        fifoError = error.message
+      }
+
+      return {
+        skuId: deliveryItem.skuId,
+        sku: { id: sku.id, code: sku.code, name: sku.name, hasExpiry: sku.hasExpiry },
+        requiredQuantity: deliveryItem.quantity,
+        availableStock,
+        isSufficient,
+        fifoBatches,
+        fifoError,
+      }
+    }))
+
+    const deliveryPreview = previewResults
 
     const allSufficient = deliveryPreview.every((d) => d.isSufficient && !d.error)
 

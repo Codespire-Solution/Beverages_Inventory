@@ -55,176 +55,70 @@ export async function GET(request: NextRequest) {
       ]
     }
 
-    // Get stock adjustments
-    const adjustments = await prisma.stockAdjustment.findMany({
-      where: itemId
-        ? {
-            ...whereAdjustments,
-            items: {
-              some: {
-                itemId: parseInt(itemId),
-              },
-            },
-          }
-        : whereAdjustments,
-      include: {
-        items: {
-          include: {
-            item: true,
-            unit: true,
+    const issueDateFilter = (startDate || endDate)
+      ? {
+          issueDate: {
+            ...(startDate ? { gte: new Date(startDate) } : {}),
+            ...(endDate ? { lte: new Date(endDate) } : {}),
           },
-        },
-        warehouse: true,
-      },
-      orderBy: {
-        adjustmentDate: 'desc',
-      },
-    })
+        }
+      : {}
 
-    // Get goods receipts
-    const receipts = await prisma.goodsReceipt.findMany({
-      where: itemId
-        ? {
-            ...whereReceipts,
-            items: {
-              some: {
-                itemId: parseInt(itemId),
-              },
-            },
-          }
-        : whereReceipts,
-      include: {
-        items: {
-          include: {
-            item: true,
-            unit: true,
+    // All 6 queries are independent — fan out in parallel (was 6 sequential awaits).
+    const [adjustments, receipts, finishedGoodsReceipts, deliveries, transfers, materialIssues] = await Promise.all([
+      prisma.stockAdjustment.findMany({
+        where: itemId
+          ? { ...whereAdjustments, items: { some: { itemId: parseInt(itemId) } } }
+          : whereAdjustments,
+        include: { items: { include: { item: true, unit: true } }, warehouse: true },
+        orderBy: { adjustmentDate: 'desc' },
+      }),
+      prisma.goodsReceipt.findMany({
+        where: itemId
+          ? { ...whereReceipts, items: { some: { itemId: parseInt(itemId) } } }
+          : whereReceipts,
+        include: { items: { include: { item: true, unit: true } }, warehouse: true },
+        orderBy: { receiptDate: 'desc' },
+      }),
+      prisma.finishedGoodsReceipt.findMany({
+        where: whereReceipts,
+        include: { items: { include: { sku: true, unit: true } }, warehouse: true },
+        orderBy: { receiptDate: 'desc' },
+      }),
+      prisma.salesDelivery.findMany({
+        where: itemId
+          ? { ...whereDeliveries, items: { some: { batch: { itemId: parseInt(itemId) } } } }
+          : whereDeliveries,
+        include: {
+          items: {
+            include: { batch: { include: { item: true } }, sku: true, unit: true },
           },
+          warehouse: true,
         },
-        warehouse: true,
-      },
-      orderBy: {
-        receiptDate: 'desc',
-      },
-    })
-
-    // Get finished goods receipts
-    const finishedGoodsReceipts = await prisma.finishedGoodsReceipt.findMany({
-      where: whereReceipts,
-      include: {
-        items: {
-          include: {
-            sku: true,
-            unit: true,
-          },
+        orderBy: { deliveryDate: 'desc' },
+      }),
+      prisma.stockTransfer.findMany({
+        where: itemId
+          ? { ...whereTransfers, items: { some: { itemId: parseInt(itemId) } } }
+          : whereTransfers,
+        include: {
+          fromWarehouse: true,
+          toWarehouse: true,
+          items: { include: { item: true, batch: true, unit: true } },
         },
-        warehouse: true,
-      },
-      orderBy: {
-        receiptDate: 'desc',
-      },
-    })
-
-    // Get sales deliveries
-    const deliveries = await prisma.salesDelivery.findMany({
-      where: itemId
-        ? {
-            ...whereDeliveries,
-            items: {
-              some: {
-                batch: {
-                  itemId: parseInt(itemId),
-                },
-              },
-            },
-          }
-        : whereDeliveries,
-      include: {
-        items: {
-          include: {
-            batch: {
-              include: {
-                item: true,
-              },
-            },
-            sku: true,
-            unit: true,
-          },
+        orderBy: { transferDate: 'desc' },
+      }),
+      prisma.materialIssue.findMany({
+        where: itemId
+          ? { ...issueDateFilter, items: { some: { itemId: parseInt(itemId) } } }
+          : issueDateFilter,
+        include: {
+          items: { include: { item: true, batch: true, unit: true } },
+          warehouse: true,
         },
-        warehouse: true,
-      },
-      orderBy: {
-        deliveryDate: 'desc',
-      },
-    })
-
-    // Get stock transfers
-    const transfers = await prisma.stockTransfer.findMany({
-      where: itemId
-        ? {
-            ...whereTransfers,
-            items: {
-              some: {
-                itemId: parseInt(itemId),
-              },
-            },
-          }
-        : whereTransfers,
-      include: {
-        fromWarehouse: true,
-        toWarehouse: true,
-        items: {
-          include: {
-            item: true,
-            batch: true,
-            unit: true,
-          },
-        },
-      },
-      orderBy: {
-        transferDate: 'desc',
-      },
-    })
-
-    // Get material issues (for production)
-    const materialIssues = await prisma.materialIssue.findMany({
-      where: itemId
-        ? {
-            ...(startDate || endDate
-              ? {
-                  issueDate: {
-                    ...(startDate ? { gte: new Date(startDate) } : {}),
-                    ...(endDate ? { lte: new Date(endDate) } : {}),
-                  },
-                }
-              : {}),
-            items: {
-              some: {
-                itemId: parseInt(itemId),
-              },
-            },
-          }
-        : startDate || endDate
-        ? {
-            issueDate: {
-              ...(startDate ? { gte: new Date(startDate) } : {}),
-              ...(endDate ? { lte: new Date(endDate) } : {}),
-            },
-          }
-        : {},
-      include: {
-        items: {
-          include: {
-            item: true,
-            batch: true,
-            unit: true,
-          },
-        },
-        warehouse: true,
-      },
-      orderBy: {
-        issueDate: 'desc',
-      },
-    })
+        orderBy: { issueDate: 'desc' },
+      }),
+    ])
 
     // Combine all movements into a unified list
     const movements: any[] = []
