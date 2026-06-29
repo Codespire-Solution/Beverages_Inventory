@@ -1,0 +1,32 @@
+import {
+  Gauge,
+  Package,
+  Tag,
+  Flask,
+  Stack,
+  ShoppingCart,
+  Factory,
+  Truck,
+  ChartLineUp,
+  FileText,
+  Users,
+  Buildings,
+  Cube,
+} from '@phosphor-icons/react'
+
+export const NAV_ICONS = {
+  dashboard: Gauge,
+  items: Package,
+  skus: Tag,
+  recipes: Flask,
+  warehouses: Buildings,
+  suppliers: Truck,
+  customers: Users,
+  inventory: Stack,
+  'purchase-orders': ShoppingCart,
+  production: Factory,
+  'customer-orders': Cube,
+  forecasting: ChartLineUp,
+  reports: FileText,
+  users: Users,
+} as const

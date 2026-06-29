@@ -1,0 +1,590 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            Int       @id @default(autoincrement())
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  fullName      String    @map("full_name")
+  role          String    @default("user") // 'admin' or 'user'
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  createdItems      Item[]              @relation("ItemCreator")
+  updatedItems      Item[]              @relation("ItemUpdater")
+  createdPOs        PurchaseOrder[]
+  createdReceipts   GoodsReceipt[]
+  createdBatches    ProductionBatch[]
+  createdIssues     MaterialIssue[]
+  createdFGReceipts FinishedGoodsReceipt[]
+  createdOrders     CustomerOrder[]
+  createdDeliveries  SalesDelivery[]
+  createdAdjustments StockAdjustment[]
+  createdTransfers   StockTransfer[]
+  createdForecasts   SalesForecast[]
+  createdRecipeVersions RecipeVersion[]
+  auditLogs         AuditLog[]
+
+  @@map("users")
+}
+
+model Unit {
+  id                Int       @id @default(autoincrement())
+  code              String    @unique
+  name              String
+  baseUnitId        Int?      @map("base_unit_id")
+  conversionFactor  Float     @default(1) @map("conversion_factor")
+  isActive          Boolean   @default(true) @map("is_active")
+
+  baseUnit          Unit?     @relation("UnitConversions", fields: [baseUnitId], references: [id])
+  relatedUnits      Unit[]    @relation("UnitConversions")
+
+  items             Item[]             @relation("ItemBaseUnit")
+  preferredItems    Item[]             @relation("ItemPreferredUnit")
+  skus              Sku[]
+  recipeIngredients RecipeIngredient[]
+  poItems           PurchaseOrderItem[]
+  receiptItems      GoodsReceiptItem[]
+  batches           InventoryBatch[]
+  issueItems        MaterialIssueItem[]
+  finishedGoodsItems FinishedGoodsReceiptItem[]
+  orderItems        CustomerOrderItem[]
+  deliveryItems     SalesDeliveryItem[]
+  adjustmentItems   StockAdjustmentItem[]
+  transferItems     StockTransferItem[]
+
+  @@map("units")
+}
+
+model InventoryBatch {
+  id          Int       @id @default(autoincrement())
+  itemId      Int       @map("item_id")
+  warehouseId Int       @map("warehouse_id")
+  batchNumber String    @map("batch_number")
+  quantity    Float
+  unitId      Int       @map("unit_id")
+  expiryDate  DateTime? @map("expiry_date")
+  receivedDate DateTime  @map("received_date")
+  unitCost    Float?    @map("unit_cost")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  item        Item      @relation(fields: [itemId], references: [id])
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  unit        Unit      @relation(fields: [unitId], references: [id])
+  issueItems  MaterialIssueItem[]
+  deliveryItems SalesDeliveryItem[]
+  adjustmentItems StockAdjustmentItem[]
+  transferItems StockTransferItem[]
+
+  @@unique([itemId, warehouseId, batchNumber])
+  @@map("inventory_batches")
+}
+
+model Warehouse {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  name      String
+  address   String?
+  isActive  Boolean   @default(true) @map("is_active")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  inventoryBatches   InventoryBatch[]
+  receipts           GoodsReceipt[]
+  productionBatches  ProductionBatch[]
+  materialIssues     MaterialIssue[]
+  finishedGoodsReceipts FinishedGoodsReceipt[]
+  salesDeliveries    SalesDelivery[]
+  adjustments        StockAdjustment[]
+  transfersFrom      StockTransfer[] @relation("StockTransferFrom")
+  transfersTo        StockTransfer[] @relation("StockTransferTo")
+
+  @@map("warehouses")
+}
+
+model Item {
+  id              Int       @id @default(autoincrement())
+  code            String    @unique
+  name            String
+  description     String?
+  category        String    // 'raw_material', 'packaging', 'finished_good'
+  baseUnitId      Int       @map("base_unit_id")
+  preferredUnitId Int?      @map("preferred_unit_id")
+  standardCost    Float     @default(0) @map("standard_cost")
+  moq             Float?    // Minimum Order Quantity
+  minStockQuantity Float?   @map("min_stock_quantity") // Minimum stock for reordering
+  taxRate         Float     @default(0) @map("tax_rate")
+  hasExpiry       Boolean   @default(false) @map("has_expiry")
+  isActive        Boolean   @default(true) @map("is_active")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       Int?      @map("created_by")
+  updatedBy       Int?      @map("updated_by")
+
+  baseUnit        Unit      @relation("ItemBaseUnit", fields: [baseUnitId], references: [id])
+  preferredUnit   Unit?     @relation("ItemPreferredUnit", fields: [preferredUnitId], references: [id])
+  creator         User?     @relation("ItemCreator", fields: [createdBy], references: [id])
+  updater         User?     @relation("ItemUpdater", fields: [updatedBy], references: [id])
+
+  recipeIngredients RecipeIngredient[]
+  poItems          PurchaseOrderItem[]
+  receiptItems     GoodsReceiptItem[]
+  issueItems       MaterialIssueItem[]
+  adjustmentItems  StockAdjustmentItem[]
+  transferItems    StockTransferItem[]
+  batches          InventoryBatch[]
+
+  @@map("items")
+}
+
+model Sku {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique
+  name        String
+  description String?
+  unitId      Int       @map("unit_id")
+  standardCost Float    @default(0) @map("standard_cost")
+  taxRate     Float     @default(0) @map("tax_rate")
+  hasExpiry   Boolean   @default(false) @map("has_expiry")
+  isActive    Boolean   @default(true) @map("is_active")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  unit        Unit      @relation(fields: [unitId], references: [id])
+
+  recipeVersions   RecipeVersion[]
+  productionBatches ProductionBatch[]
+  orderItems       CustomerOrderItem[]
+  deliveryItems    SalesDeliveryItem[]
+  finishedGoodsItems FinishedGoodsReceiptItem[]
+  forecasts        SalesForecast[]
+
+  @@map("skus")
+}
+
+model RecipeVersion {
+  id            Int       @id @default(autoincrement())
+  skuId         Int       @map("sku_id")
+  versionNumber Int       @map("version_number")
+  effectiveFrom DateTime  @map("effective_from")
+  effectiveTo   DateTime? @map("effective_to")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  createdBy     Int?      @map("created_by")
+
+  sku           Sku       @relation(fields: [skuId], references: [id])
+  creator       User?     @relation(fields: [createdBy], references: [id])
+  ingredients   RecipeIngredient[]
+  productionBatches ProductionBatch[]
+
+  @@unique([skuId, versionNumber])
+  @@map("recipe_versions")
+}
+
+model RecipeIngredient {
+  id              Int            @id @default(autoincrement())
+  recipeVersionId Int            @map("recipe_version_id")
+  itemId          Int            @map("item_id")
+  quantity        Float
+  unitId          Int            @map("unit_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  recipeVersion   RecipeVersion  @relation(fields: [recipeVersionId], references: [id], onDelete: Cascade)
+  item            Item           @relation(fields: [itemId], references: [id])
+  unit            Unit           @relation(fields: [unitId], references: [id])
+
+  @@map("recipe_ingredients")
+}
+
+model Supplier {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  contactPerson String?   @map("contact_person")
+  phone         String?
+  email         String?
+  address       String?
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model Customer {
+  id            Int       @id @default(autoincrement())
+  code          String    @unique
+  name          String
+  contactPerson String?   @map("contact_person")
+  phone         String?
+  email         String?
+  address       String?
+  taxRate       Float     @default(0) @map("tax_rate")
+  isActive      Boolean   @default(true) @map("is_active")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  orders        CustomerOrder[]
+
+  @@map("customers")
+}
+
+model PurchaseOrder {
+  id                    Int       @id @default(autoincrement())
+  poNumber              String    @unique @map("po_number")
+  supplierId            Int       @map("supplier_id")
+  orderDate             DateTime  @map("order_date")
+  expectedDeliveryDate  DateTime? @map("expected_delivery_date")
+  status                String    @default("draft") // 'draft', 'confirmed', 'partially_received', 'fully_received', 'cancelled'
+  totalAmount            Float     @default(0) @map("total_amount")
+  taxAmount              Float     @default(0) @map("tax_amount")
+  grandTotal             Float     @default(0) @map("grand_total")
+  notes                 String?
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  createdBy             Int?      @map("created_by")
+
+  supplier              Supplier  @relation(fields: [supplierId], references: [id])
+  creator               User?     @relation(fields: [createdBy], references: [id])
+  items                 PurchaseOrderItem[]
+  receipts              GoodsReceipt[]
+
+  @@map("purchase_orders")
+}
+
+model PurchaseOrderItem {
+  id              Int            @id @default(autoincrement())
+  poId            Int            @map("po_id")
+  itemId          Int            @map("item_id")
+  quantity        Float
+  unitId          Int            @map("unit_id")
+  unitPrice        Float          @map("unit_price")
+  taxRate         Float          @default(0) @map("tax_rate")
+  lineTotal       Float          @map("line_total")
+  receivedQuantity Float         @default(0) @map("received_quantity")
+
+  po              PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  item            Item           @relation(fields: [itemId], references: [id])
+  unit            Unit           @relation(fields: [unitId], references: [id])
+
+  @@map("po_items")
+}
+
+model GoodsReceipt {
+  id          Int       @id @default(autoincrement())
+  receiptNumber String  @unique @map("receipt_number")
+  poId        Int?      @map("po_id")
+  warehouseId Int       @map("warehouse_id")
+  receiptDate DateTime  @map("receipt_date")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   Int?      @map("created_by")
+
+  po          PurchaseOrder? @relation(fields: [poId], references: [id])
+  warehouse   Warehouse      @relation(fields: [warehouseId], references: [id])
+  creator     User?          @relation(fields: [createdBy], references: [id])
+  items       GoodsReceiptItem[]
+
+  @@map("goods_receipts")
+}
+
+model GoodsReceiptItem {
+  id          Int           @id @default(autoincrement())
+  receiptId   Int           @map("receipt_id")
+  itemId      Int           @map("item_id")
+  batchNumber String?       @map("batch_number")
+  quantity    Float
+  unitId      Int           @map("unit_id")
+  expiryDate  DateTime?     @map("expiry_date")
+  unitCost    Float?        @map("unit_cost")
+
+  receipt     GoodsReceipt  @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+  unit        Unit          @relation(fields: [unitId], references: [id])
+
+  @@map("goods_receipt_items")
+}
+
+model ProductionBatch {
+  id              Int       @id @default(autoincrement())
+  batchNumber     String    @unique @map("batch_number")
+  skuId           Int       @map("sku_id")
+  recipeVersionId Int       @map("recipe_version_id")
+  warehouseId     Int       @map("warehouse_id")
+  targetQuantity  Float     @map("target_quantity")
+  actualQuantity  Float?    @map("actual_quantity")
+  wasteQuantity   Float     @default(0) @map("waste_quantity")
+  productionDate  DateTime  @map("production_date")
+  status          String    @default("in_progress") // 'in_progress', 'completed', 'cancelled'
+  notes           String?
+  createdAt       DateTime  @default(now()) @map("created_at")
+  createdBy       Int?      @map("created_by")
+
+  sku             Sku        @relation(fields: [skuId], references: [id])
+  recipeVersion   RecipeVersion @relation(fields: [recipeVersionId], references: [id])
+  warehouse       Warehouse  @relation(fields: [warehouseId], references: [id])
+  creator         User?      @relation(fields: [createdBy], references: [id])
+  materialIssues  MaterialIssue[]
+  finishedGoods   FinishedGoodsReceipt[]
+
+  @@map("production_batches")
+}
+
+model MaterialIssue {
+  id              Int            @id @default(autoincrement())
+  issueNumber     String         @unique @map("issue_number")
+  productionBatchId Int          @map("production_batch_id")
+  warehouseId     Int            @map("warehouse_id")
+  issueDate       DateTime       @map("issue_date")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  createdBy       Int?           @map("created_by")
+
+  productionBatch ProductionBatch @relation(fields: [productionBatchId], references: [id])
+  warehouse       Warehouse       @relation(fields: [warehouseId], references: [id])
+  creator         User?           @relation(fields: [createdBy], references: [id])
+  items           MaterialIssueItem[]
+
+  @@map("material_issues")
+}
+
+model MaterialIssueItem {
+  id          Int            @id @default(autoincrement())
+  issueId     Int            @map("issue_id")
+  itemId      Int            @map("item_id")
+  batchId     Int            @map("batch_id")
+  quantity    Float
+  unitId      Int            @map("unit_id")
+
+  issue       MaterialIssue  @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  item        Item           @relation(fields: [itemId], references: [id])
+  batch       InventoryBatch @relation(fields: [batchId], references: [id])
+  unit        Unit           @relation(fields: [unitId], references: [id])
+
+  @@map("material_issue_items")
+}
+
+model FinishedGoodsReceipt {
+  id              Int            @id @default(autoincrement())
+  receiptNumber   String         @unique @map("receipt_number")
+  productionBatchId Int          @map("production_batch_id")
+  warehouseId     Int            @map("warehouse_id")
+  receiptDate     DateTime       @map("receipt_date")
+  notes           String?
+  createdAt       DateTime       @default(now()) @map("created_at")
+  createdBy       Int?           @map("created_by")
+
+  productionBatch ProductionBatch @relation(fields: [productionBatchId], references: [id])
+  warehouse       Warehouse       @relation(fields: [warehouseId], references: [id])
+  creator         User?           @relation(fields: [createdBy], references: [id])
+  items           FinishedGoodsReceiptItem[]
+
+  @@map("finished_goods_receipts")
+}
+
+model FinishedGoodsReceiptItem {
+  id          Int                    @id @default(autoincrement())
+  receiptId   Int                    @map("receipt_id")
+  skuId       Int                    @map("sku_id")
+  batchNumber String                 @map("batch_number")
+  quantity    Float
+  unitId      Int                    @map("unit_id")
+  expiryDate  DateTime?              @map("expiry_date")
+  productionDate DateTime            @map("production_date")
+
+  receipt     FinishedGoodsReceipt   @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  sku         Sku                    @relation(fields: [skuId], references: [id])
+  unit        Unit                   @relation(fields: [unitId], references: [id])
+
+  @@map("finished_goods_receipt_items")
+}
+
+model CustomerOrder {
+  id                  Int       @id @default(autoincrement())
+  orderNumber         String    @unique @map("order_number")
+  customerId          Int       @map("customer_id")
+  orderDate           DateTime  @map("order_date")
+  expectedDeliveryDate DateTime? @map("expected_delivery_date")
+  status              String    @default("pending") // 'pending', 'confirmed', 'delivered'
+  totalAmount         Float     @default(0) @map("total_amount")
+  taxAmount           Float     @default(0) @map("tax_amount")
+  grandTotal          Float     @default(0) @map("grand_total")
+  notes               String?
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+  createdBy           Int?      @map("created_by")
+
+  customer            Customer  @relation(fields: [customerId], references: [id])
+  creator             User?     @relation(fields: [createdBy], references: [id])
+  items               CustomerOrderItem[]
+  deliveries          SalesDelivery[]
+
+  @@map("customer_orders")
+}
+
+model CustomerOrderItem {
+  id              Int           @id @default(autoincrement())
+  orderId         Int           @map("order_id")
+  skuId           Int           @map("sku_id")
+  quantity        Float
+  unitId          Int           @map("unit_id")
+  unitPrice       Float         @map("unit_price")
+  taxRate         Float         @default(0) @map("tax_rate")
+  lineTotal       Float         @map("line_total")
+  fulfilledQuantity Float       @default(0) @map("fulfilled_quantity")
+
+  order           CustomerOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  sku             Sku           @relation(fields: [skuId], references: [id])
+  unit            Unit          @relation(fields: [unitId], references: [id])
+
+  @@map("customer_order_items")
+}
+
+model SalesDelivery {
+  id          Int       @id @default(autoincrement())
+  deliveryNumber String  @unique @map("delivery_number")
+  orderId     Int       @map("order_id")
+  warehouseId Int       @map("warehouse_id")
+  deliveryDate DateTime @map("delivery_date")
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   Int?      @map("created_by")
+
+  order       CustomerOrder @relation(fields: [orderId], references: [id])
+  warehouse   Warehouse     @relation(fields: [warehouseId], references: [id])
+  creator     User?         @relation(fields: [createdBy], references: [id])
+  items       SalesDeliveryItem[]
+
+  @@map("sales_deliveries")
+}
+
+model SalesDeliveryItem {
+  id          Int           @id @default(autoincrement())
+  deliveryId  Int           @map("delivery_id")
+  skuId       Int           @map("sku_id")
+  batchId     Int           @map("batch_id")
+  quantity    Float
+  unitId      Int           @map("unit_id")
+
+  delivery    SalesDelivery @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  sku         Sku           @relation(fields: [skuId], references: [id])
+  batch       InventoryBatch @relation(fields: [batchId], references: [id])
+  unit        Unit           @relation(fields: [unitId], references: [id])
+
+  @@map("sales_delivery_items")
+}
+
+model StockAdjustment {
+  id          Int       @id @default(autoincrement())
+  adjustmentNumber String @unique @map("adjustment_number")
+  warehouseId Int     @map("warehouse_id")
+  adjustmentDate DateTime @map("adjustment_date")
+  reason      String
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   Int?      @map("created_by")
+
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  creator     User?     @relation(fields: [createdBy], references: [id])
+  items       StockAdjustmentItem[]
+
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id          Int             @id @default(autoincrement())
+  adjustmentId Int            @map("adjustment_id")
+  itemId      Int             @map("item_id")
+  batchId     Int?            @map("batch_id")
+  quantityChange Float        @map("quantity_change") // Positive for increase, negative for decrease
+  unitId      Int             @map("unit_id")
+  reason      String?
+
+  adjustment  StockAdjustment @relation(fields: [adjustmentId], references: [id], onDelete: Cascade)
+  item        Item            @relation(fields: [itemId], references: [id])
+  batch       InventoryBatch? @relation(fields: [batchId], references: [id])
+  unit        Unit            @relation(fields: [unitId], references: [id])
+
+  @@map("stock_adjustment_items")
+}
+
+model StockTransfer {
+  id          Int       @id @default(autoincrement())
+  transferNumber String @unique @map("transfer_number")
+  fromWarehouseId Int   @map("from_warehouse_id")
+  toWarehouseId   Int   @map("to_warehouse_id")
+  transferDate    DateTime @map("transfer_date")
+  status      String    @default("pending") // 'pending', 'completed', 'cancelled'
+  notes       String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  createdBy   Int?      @map("created_by")
+
+  fromWarehouse Warehouse @relation("StockTransferFrom", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse @relation("StockTransferTo", fields: [toWarehouseId], references: [id])
+  creator       User?     @relation(fields: [createdBy], references: [id])
+  items         StockTransferItem[]
+
+  @@map("stock_transfers")
+}
+
+model StockTransferItem {
+  id          Int           @id @default(autoincrement())
+  transferId  Int           @map("transfer_id")
+  itemId      Int           @map("item_id")
+  batchId     Int           @map("batch_id")
+  quantity    Float
+  unitId      Int           @map("unit_id")
+
+  transfer    StockTransfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  item        Item          @relation(fields: [itemId], references: [id])
+  batch       InventoryBatch @relation(fields: [batchId], references: [id])
+  unit        Unit          @relation(fields: [unitId], references: [id])
+
+  @@map("stock_transfer_items")
+}
+
+model SalesForecast {
+  id              Int       @id @default(autoincrement())
+  skuId           Int       @map("sku_id")
+  forecastMonth   DateTime  @map("forecast_month") // First day of month
+  forecastedQuantity Float  @map("forecasted_quantity")
+  actualQuantity  Float?   @map("actual_quantity")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+  createdBy       Int?      @map("created_by")
+
+  sku             Sku       @relation(fields: [skuId], references: [id])
+  creator         User?     @relation(fields: [createdBy], references: [id])
+
+  @@unique([skuId, forecastMonth])
+  @@map("sales_forecasts")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  tableName String   @map("table_name")
+  recordId  Int      @map("record_id")
+  action    String   // 'create', 'update', 'delete'
+  oldValues String?  @map("old_values") // JSON string
+  newValues String?  @map("new_values") // JSON string
+  userId    Int?     @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User?    @relation(fields: [userId], references: [id])
+
+  @@map("audit_logs")
+}
+

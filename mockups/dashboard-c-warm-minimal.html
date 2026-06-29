@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Mockup C — Minimal (white)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..600&family=Assistant:wght@300..700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/@phosphor-icons/web@2.1.1"></script>
+<style>
+  :root{
+    --bg:#FDFCFA; --paper:#FFFFFF; --ink:#1A1812; --ink-60:#6E695E;
+    --accent:#E08A2B; --accent-ink:#B0640C; --line:#ECE7DC; --line-2:#F5F1E8;
+    --mint:#CFE6D0; --berry:#F4C9D4; --litchi:#F7D9BD; --warn-ink:#9A5A12; --ok-ink:#2F6135;
+    --ease:cubic-bezier(0.23,1,0.32,1);
+    --serif:"Playfair Display",Georgia,serif; --sans:"Assistant",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-font-smoothing:antialiased}
+  body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.55}
+  .mono{font-family:var(--mono);font-feature-settings:"tnum" 1}
+  .label{font-family:var(--mono);text-transform:uppercase;letter-spacing:.15em;font-size:10.5px;color:var(--ink-60)}
+  a{color:inherit;text-decoration:none}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+  .shell{display:grid;grid-template-columns:226px 1fr;min-height:100vh}
+  aside{padding:30px 16px;border-right:1px solid var(--line);position:sticky;top:0;height:100vh;display:flex;flex-direction:column}
+  .brand{font-family:var(--serif);font-weight:700;font-size:27px;letter-spacing:.05em}
+  .brand-sub{font-family:var(--mono);font-size:9px;letter-spacing:.32em;color:var(--accent-ink);margin-top:5px}
+  nav{margin-top:30px;display:flex;flex-direction:column;gap:1px}
+  nav a{display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:8px;color:var(--ink-60);font-weight:600;font-size:13.5px;border-left:2px solid transparent;transition:color .15s var(--ease),background .15s var(--ease)}
+  nav a i{font-size:17px}
+  nav a:hover{color:var(--ink);background:var(--line-2)}
+  nav a.active{color:var(--ink);border-left-color:var(--accent);background:var(--line-2);font-weight:700}
+  nav a.active i{color:var(--accent-ink)}
+  .side-foot{margin-top:auto;border-top:1px solid var(--line);padding-top:14px;display:flex;align-items:center;gap:10px}
+  .avatar{width:34px;height:34px;border-radius:99px;background:var(--ink);color:#fff;display:grid;place-items:center;font-family:var(--mono);font-size:11px}
+  main{min-width:0}
+  .top{display:flex;align-items:center;justify-content:space-between;padding:22px 44px;border-bottom:1px solid var(--line)}
+  .search{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:12px;color:var(--ink-60);background:transparent;border-bottom:1px solid var(--line);padding:6px 2px;width:300px}
+  .btn{font-family:var(--mono);text-transform:uppercase;letter-spacing:.11em;font-size:11px;font-weight:500;padding:11px 18px;border-radius:99px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .14s var(--ease),background .15s var(--ease)}
+  .btn:hover{background:#000}.btn:active{transform:scale(.97)}
+  .btn.ghost{background:transparent;color:var(--ink)}.btn.ghost:hover{background:var(--line-2)}
+  .wrap{padding:40px 44px;max-width:1140px;width:100%}
+  .pagehead{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:1px solid var(--line);padding-bottom:26px;margin-bottom:32px}
+  .pagehead h1{font-family:var(--serif);font-weight:400;font-size:46px;line-height:1;letter-spacing:-.01em;margin-top:12px}
+  .pagehead h1 em{font-style:italic;color:var(--accent-ink)}
+  /* borderless divided stat strip */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:14px;overflow:hidden;background:var(--paper);margin-bottom:36px}
+  .stat{padding:24px 26px;border-right:1px solid var(--line)}
+  .stat:last-child{border-right:none}
+  .stat .v{font-family:var(--serif);font-weight:400;font-size:44px;line-height:1;margin:12px 0 8px}
+  .stat .d{font-family:var(--mono);font-size:10.5px;color:var(--accent-ink);display:flex;align-items:center;gap:5px}
+  .stat .d.flat{color:var(--ink-60)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-bottom:42px}
+  .blockhead{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:6px}
+  .blockhead h2{font-family:var(--serif);font-weight:400;font-size:24px}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:14px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border:none}
+  .row .name{display:flex;align-items:center;gap:11px}
+  .tag{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.07em;padding:3px 9px;border-radius:6px;color:var(--ink)}
+  .t-mint{background:var(--mint)} .t-berry{background:var(--berry)} .t-litchi{background:var(--litchi)}
+  .warn{font-family:var(--mono);font-size:12px;color:var(--warn-ink)}
+  .act i{color:var(--accent-ink);font-size:15px;margin-right:9px;vertical-align:-2px}
+  table{width:100%;border-collapse:collapse}
+  thead th{font-family:var(--mono);text-transform:uppercase;letter-spacing:.1em;font-size:10px;color:var(--ink-60);text-align:left;padding:0 0 12px;border-bottom:1px solid var(--ink)}
+  tbody td{padding:15px 0;border-bottom:1px solid var(--line);font-size:14px}
+  tbody tr:last-child td{border:none}
+  .status{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:4px 10px;border-radius:99px}
+  .s-ok{background:#D8EBD9;color:var(--ok-ink)} .s-pend{background:var(--litchi);color:var(--warn-ink)} .s-draft{background:var(--line);color:var(--ink-60)}
+  .sec{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:18px}
+  .sec h2{font-family:var(--serif);font-weight:400;font-size:26px}
+  @media (prefers-reduced-motion:no-preference){
+    .anim{opacity:0;transform:translateY(8px);animation:rise .5s var(--ease) forwards}
+    .anim:nth-child(1){animation-delay:.02s}.anim:nth-child(2){animation-delay:.08s}
+    @keyframes rise{to{opacity:1;transform:none}}
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div><div class="brand">ANOTHR</div><div class="brand-sub">INVENTORY OS</div></div>
+    <nav>
+      <a class="active"><i class="ph ph-gauge"></i> Dashboard</a>
+      <a><i class="ph ph-package"></i> Items</a>
+      <a><i class="ph ph-tag"></i> SKUs</a>
+      <a><i class="ph ph-flask"></i> Recipes / QPS</a>
+      <a><i class="ph ph-stack"></i> Inventory</a>
+      <a><i class="ph ph-shopping-cart"></i> Purchase Orders</a>
+      <a><i class="ph ph-factory"></i> Production</a>
+      <a><i class="ph ph-truck"></i> Customer Orders</a>
+      <a><i class="ph ph-chart-line-up"></i> Forecasting</a>
+      <a><i class="ph ph-file-text"></i> Reports</a>
+    </nav>
+    <div class="side-foot"><div class="avatar">AS</div><div><div style="font-weight:600;font-size:13px">Admin</div><div class="label" style="font-size:9px">ADMINISTRATOR</div></div></div>
+  </aside>
+  <main>
+    <div class="top">
+      <div class="search"><i class="ph ph-magnifying-glass"></i> Search</div>
+      <div style="display:flex;align-items:center;gap:16px"><span class="label">Main Warehouse</span><button class="btn"><i class="ph ph-plus"></i> New Order</button></div>
+    </div>
+    <div class="wrap">
+      <div class="pagehead">
+        <div>
+          <span class="label">Sunday, 29 June 2026</span>
+          <h1>Dashboard <em>overview</em></h1>
+        </div>
+        <button class="btn ghost"><i class="ph ph-export"></i> Export report</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="label">Inventory Value</div><div class="v">₹4,500</div><div class="d"><i class="ph ph-stack"></i> 3 batches</div></div>
+        <div class="stat"><div class="label">Total Items</div><div class="v">15</div><div class="d flat">11 raw, 4 packaging</div></div>
+        <div class="stat"><div class="label">Finished SKUs</div><div class="v">3</div><div class="d flat">ready to produce</div></div>
+        <div class="stat"><div class="label">Expiring</div><div class="v">2</div><div class="d"><i class="ph ph-warning"></i> past date</div></div>
+      </div>
+
+      <div class="cols">
+        <div class="anim">
+          <div class="blockhead"><h2>Stock on hand</h2><span class="label">3 batches</span></div>
+          <div class="row"><span class="name"><span class="tag t-berry">PKG</span> Aluminium Can</span><span class="mono" style="color:var(--ok-ink)">10,000 PCS</span></div>
+          <div class="row"><span class="name"><span class="tag t-mint">RAW</span> Chicory Root Inulin</span><span class="warn">100 KG, expired</span></div>
+          <div class="row"><span class="name"><span class="tag t-mint">RAW</span> Strawberry Natural Flavour</span><span class="warn">50 L, expired</span></div>
+          <div class="row"><span class="name" style="color:var(--ink-60)">12 items with no stock</span><a class="label" style="color:var(--accent-ink)">CREATE PO</a></div>
+        </div>
+        <div class="anim">
+          <div class="blockhead"><h2>Finished goods</h2><span class="label">3 SKUs</span></div>
+          <div class="row act"><span><i class="ph ph-flask"></i>Strawberry Vanilla</span><span class="label">SKU-001, ₹2.50</span></div>
+          <div class="row act"><span><i class="ph ph-flask"></i>Litchi Mango</span><span class="label">SKU-002, ₹2.50</span></div>
+          <div class="row act"><span><i class="ph ph-flask"></i>Lemon Lime</span><span class="label">SKU-003, ₹2.50</span></div>
+          <div class="row act"><span style="color:var(--ink-60)"><i class="ph ph-warning"></i>No recipes defined yet</span><a class="label" style="color:var(--accent-ink)">ADD RECIPE</a></div>
+        </div>
+      </div>
+
+      <div class="sec"><h2>Items &amp; stock</h2><a class="label" style="color:var(--accent-ink)">VIEW ALL 15 <i class="ph ph-arrow-right"></i></a></div>
+      <table>
+        <thead><tr><th>Code</th><th>Item</th><th>Category</th><th style="text-align:right">Std Cost</th><th style="text-align:right">In Stock</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">RM-001</td><td>Aluminium Can</td><td>Packaging</td><td class="mono" style="text-align:right">₹0.05</td><td class="mono" style="text-align:right">10,000 PCS</td></tr>
+          <tr><td class="mono">RM-004</td><td>PE Packaging</td><td>Packaging</td><td class="mono" style="text-align:right">₹2.00</td><td class="mono" style="text-align:right;color:var(--ink-60)">0</td></tr>
+          <tr><td class="mono">RM-005</td><td>Chicory Root Inulin</td><td>Raw Material</td><td class="mono" style="text-align:right">₹15.00</td><td class="mono" style="text-align:right">100 KG</td></tr>
+          <tr><td class="mono">RM-006</td><td>Rosemary Extract</td><td>Raw Material</td><td class="mono" style="text-align:right">₹25.00</td><td class="mono" style="text-align:right;color:var(--ink-60)">0</td></tr>
+          <tr><td class="mono">RM-008</td><td>Ashwagandha</td><td>Raw Material</td><td class="mono" style="text-align:right">₹30.00</td><td class="mono" style="text-align:right;color:var(--ink-60)">0</td></tr>
+          <tr><td class="mono">RM-010</td><td>Monk Fruit</td><td>Raw Material</td><td class="mono" style="text-align:right">₹40.00</td><td class="mono" style="text-align:right;color:var(--ink-60)">0</td></tr>
+          <tr><td class="mono">RM-012</td><td>Strawberry Natural Flavour</td><td>Raw Material</td><td class="mono" style="text-align:right">₹50.00</td><td class="mono" style="text-align:right">50 L</td></tr>
+          <tr><td class="mono">RM-013</td><td>Litchi Natural Flavour</td><td>Raw Material</td><td class="mono" style="text-align:right">₹50.00</td><td class="mono" style="text-align:right;color:var(--ink-60)">0</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+</body>
+</html>
