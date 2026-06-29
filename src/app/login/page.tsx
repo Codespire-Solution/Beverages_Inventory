@@ -191,14 +191,6 @@ export default function LoginPage() {
               <SignIn size={16} />
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
-
-            {/* Demo credentials */}
-            <div className="mt-6 pt-5 border-t border-line text-[13px] text-ink-60">
-              Demo access for this seeded database:
-              <div className="font-mono text-[12px] text-ink mt-1">
-                admin@beverage.com / admin123
-              </div>
-            </div>
           </form>
         </div>
       </div>
