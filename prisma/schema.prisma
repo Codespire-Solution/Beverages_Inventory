@@ -88,6 +88,10 @@ model InventoryBatch {
   transferItems StockTransferItem[]
 
   @@unique([itemId, warehouseId, batchNumber])
+  @@index([itemId, quantity])
+  @@index([warehouseId])
+  @@index([expiryDate])
+  @@index([receivedDate])
   @@map("inventory_batches")
 }
 
@@ -262,6 +266,8 @@ model PurchaseOrder {
   items                 PurchaseOrderItem[]
   receipts              GoodsReceipt[]
 
+  @@index([orderDate, status])
+  @@index([status])
   @@map("purchase_orders")
 }
 
@@ -340,6 +346,7 @@ model ProductionBatch {
   materialIssues  MaterialIssue[]
   finishedGoods   FinishedGoodsReceipt[]
 
+  @@index([status])
   @@map("production_batches")
 }
 
@@ -432,6 +439,8 @@ model CustomerOrder {
   items               CustomerOrderItem[]
   deliveries          SalesDelivery[]
 
+  @@index([orderDate, status])
+  @@index([status, expectedDeliveryDate])
   @@map("customer_orders")
 }
 
@@ -468,6 +477,7 @@ model SalesDelivery {
   creator     User?         @relation(fields: [createdBy], references: [id])
   items       SalesDeliveryItem[]
 
+  @@index([deliveryDate])
   @@map("sales_deliveries")
 }
 

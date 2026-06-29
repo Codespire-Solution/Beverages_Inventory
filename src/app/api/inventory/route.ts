@@ -26,6 +26,8 @@ export async function GET(request: NextRequest) {
     const receivedDateTo = searchParams.get('receivedDateTo')
     const expiryDateFrom = searchParams.get('expiryDateFrom')
     const expiryDateTo = searchParams.get('expiryDateTo')
+    const limitParam = searchParams.get('limit')
+    const pageParam = searchParams.get('page')
 
     const where: any = {}
     if (warehouseId) where.warehouseId = parseInt(warehouseId)
@@ -68,20 +70,32 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const batches = await prisma.inventoryBatch.findMany({
-      where,
-      include: {
-        item: true,
-        warehouse: true,
-        unit: true,
-      },
-      orderBy: [
-        { expiryDate: { sort: 'asc', nulls: 'last' } },
-        { receivedDate: 'asc' },
-      ],
-    })
+    const limit = limitParam ? Math.min(Math.max(parseInt(limitParam, 10) || 50, 1), 500) : undefined
+    const page = pageParam ? Math.max(parseInt(pageParam, 10) || 1, 1) : 1
+    const skip = limit ? (page - 1) * limit : undefined
 
-    return NextResponse.json({ batches })
+    const [batches, total] = await Promise.all([
+      prisma.inventoryBatch.findMany({
+        where,
+        include: {
+          item: true,
+          warehouse: true,
+          unit: true,
+        },
+        orderBy: [
+          { expiryDate: { sort: 'asc', nulls: 'last' } },
+          { receivedDate: 'asc' },
+        ],
+        ...(limit ? { take: limit, skip } : {}),
+      }),
+      limit ? prisma.inventoryBatch.count({ where }) : Promise.resolve(undefined),
+    ])
+
+    return NextResponse.json(
+      limit
+        ? { batches, pagination: { page, limit, total, totalPages: Math.ceil((total ?? 0) / limit) } }
+        : { batches }
+    )
   } catch (error) {
     console.error('Inventory GET error:', error)
     return NextResponse.json(
